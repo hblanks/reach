@@ -15,6 +15,7 @@ from reach.airflow.tasks import policy_name_normalizer
 from reach.airflow.tasks.spider_operator import SpiderOperator
 from reach.airflow.tasks.extract_refs_operator import ExtractRefsOperator
 from reach.airflow.tasks.parse_pdf_operator import ParsePdfOperator
+from reach.airflow.tasks.evaluate_operator import EvaluateOperator
 
 ORGANISATIONS = [
     'who_iris',
@@ -174,7 +175,31 @@ def org_fuzzy_match(dag, organisation, item_limits, parsePdf, esIndexPublication
     parsePdf >> name_normalizer >> esIndexFullTexts
     name_normalizer >> extractRefs >> fuzzyMatchRefs >> esIndexFuzzyMatched
     esIndexPublications >> fuzzyMatchRefs
-    return esIndexFuzzyMatched
+    return esIndexFuzzyMatched, fuzzyMatchRefs
+
+
+def evaluate_matches(dag, organisation, fuzzyMatchRefs):
+    """
+    Evaluate matches against a manually labelled gold dataset
+    """
+    # TODO:
+    # Get manually labelled dataset
+    # Match gold dataset against elastic search
+    # Compare gold es matches with reach es matches
+
+    evaluateRefs = EvaluateOperator(
+        task_id='Evaluate.%s' % organisation,
+        es_hosts=get_es_hosts(),
+        src_s3_key=fuzzyMatchRefs.dst_s3_key,
+        organisation=organisation,
+        dst_s3_key=to_s3_output(
+            dag, 'end-to-end-evaluation', organisation, '.json.gz'),
+        es_index='-'.join([dag.dag_id, 'epmc', 'metadata']),
+        dag=dag,
+    )
+
+    fuzzyMatchRefs >> evaluateRefs
+    return evaluateRefs
 
 
 def create_org_pipeline_fuzzy_match(dag, organisation, item_limits, spider_years,
@@ -190,9 +215,11 @@ def create_org_pipeline_fuzzy_match(dag, organisation, item_limits, spider_years
     """
 
     parsePdf = org_refs(dag, organisation, item_limits, spider_years)
-    return parsePdf, org_fuzzy_match(
+    esIndexFuzzyMatched, fuzzyMatchRefs = org_fuzzy_match(
         dag, organisation, item_limits, parsePdf, esIndexPublications)
+    evaluatedMatches = evaluate_matches(dag, organisation, fuzzyMatchRefs)
 
+    return parsePdf, esIndexFuzzyMatched
 
 def create_org_pipeline_exact_match(dag, organisation, item_limits,
                                     spider_years, parsePdf=None,
