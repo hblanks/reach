@@ -42,26 +42,40 @@ class EvaluateOperator(BaseOperator):
 
     @report_exception
     def execute(self, context):
-        with safe_import():
-            from reach.refparse.refparse import yield_structured_references
 
-        pool_map = map
         s3 = WellcomeS3Hook(aws_conn_id=self.aws_conn_id)
 
-        with tempfile.NamedTemporaryFile() as dst_rawf:
-            with gzip.GzipFile(mode='wb', fileobj=dst_rawf) as dst_f:
-                refs = [{"foo": "bar"}] * 10
-                for structured_references in refs:
-                    for ref in structured_references:
-                        dst_f.write(json.dumps(ref).encode('utf-8'))
-                        dst_f.write(b'\n')
+        results = []
 
-            dst_rawf.flush()
+        with tempfile.TemporaryFile(mode='rb+') as tf:
 
+            # Get the precursor file (the fuzzyMatchedRefs)
+
+            key = s3.get_key(self.src_s3_key)
+            key.download_fileobj(tf)
+            tf.seek(0)
+
+            with gzip.GzipFile(mode='rb', fileobj=tf) as f:
+
+                # Open the gzipped json file
+
+                for fuzzy_matched_ref in f:
+                    results.append(fuzzy_matched_ref)
+
+        # Write the results to S3
+        with tempfile.NamedTemporaryFile(mode='wb') as output_raw_f:
+            with gzip.GzipFile(mode='wb', fileobj=output_raw_f) as output_f:
+                for item in results:
+                    #output_f.write(item.encode("utf-8"))
+                    output_f.write(item)
+                    output_f.write(b"\n")
+
+            output_raw_f.flush()
             s3.load_file(
-                filename=dst_rawf.name,
+                filename=output_raw_f.name,
                 key=self.dst_s3_key,
-                replace=True,
+                replace=True
             )
-
-
+            logger.info(
+                'EvaluateOperator: Finished Evaluation of Matches'
+            )

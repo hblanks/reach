@@ -16,6 +16,7 @@ from reach.airflow.tasks.spider_operator import SpiderOperator
 from reach.airflow.tasks.extract_refs_operator import ExtractRefsOperator
 from reach.airflow.tasks.parse_pdf_operator import ParsePdfOperator
 from reach.airflow.tasks.evaluate_operator import EvaluateOperator
+from reach.airflow.tasks.fetch_json_gzip import FetchJsonGzip
 
 ORGANISATIONS = [
     'who_iris',
@@ -33,12 +34,14 @@ DEFAULT_ARGS = {
     'retry_delay': datetime.timedelta(minutes=5),
 }
 
+GOLD_DATA = "s3://datalabs-data/reach_evaluation/data/sync/2019.10.8_valid_TITLE.jsonl.gz"
+VALIDATION_DATA = "s3://datalabs-data/reach_evaluation/data/sync/2019.10.8_valid.jsonl.gz"
+
 ItemLimits = namedtuple('ItemLimits', ('spiders', 'index'))
 
 #
 # Configuration & paths
 #
-
 
 def verify_s3_prefix():
     reach_s3_prefix = conf.get("core", "reach_s3_prefix")
@@ -182,10 +185,23 @@ def evaluate_matches(dag, organisation, fuzzyMatchRefs):
     """
     Evaluate matches against a manually labelled gold dataset
     """
+
     # TODO:
     # Get manually labelled dataset
-    # Match gold dataset against elastic search
+    # Match gold dataset against elastic search using existing task
     # Compare gold es matches with reach es matches
+
+    fetchedValidationData = FetchJsonGzip(
+        task_id='FetchValidationData',
+        src_s3_key=VALIDATION_DATA,
+        dag=dag,
+    )
+
+    fetchedGoldData = FetchJsonGzip(
+        task_id='FetchGoldData',
+        src_s3_key=GOLD_DATA,
+        dag=dag,
+    )
 
     evaluateRefs = EvaluateOperator(
         task_id='Evaluate.%s' % organisation,
@@ -198,7 +214,7 @@ def evaluate_matches(dag, organisation, fuzzyMatchRefs):
         dag=dag,
     )
 
-    fuzzyMatchRefs >> evaluateRefs
+    fetchedGoldData >> fetchedValidationData >> fuzzyMatchRefs >> evaluateRefs
     return evaluateRefs
 
 
