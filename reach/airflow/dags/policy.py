@@ -16,7 +16,6 @@ from reach.airflow.tasks.spider_operator import SpiderOperator
 from reach.airflow.tasks.extract_refs_operator import ExtractRefsOperator
 from reach.airflow.tasks.parse_pdf_operator import ParsePdfOperator
 from reach.airflow.tasks.evaluate_operator import EvaluateOperator
-from reach.airflow.tasks.fetch_json_gzip import FetchJsonGzip
 from reach.airflow.tasks.evaluate_extract_refs_from_gold_data import ExtractRefsFromGoldDataOperator
 
 ORGANISATIONS = [
@@ -198,7 +197,7 @@ def evaluate_matches(dag, organisation, fuzzyMatchRefs):
         valid_s3_key=VALIDATION_DATA,
         gold_s3_key=GOLD_DATA,
         dst_s3_key=to_s3_output(
-            dag, 'gold_refs.json.gz'),
+            dag, 'evaluation', 'gold_refs', '.json.gz'),
         dag=dag,
     )
 
