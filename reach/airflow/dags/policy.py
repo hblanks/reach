@@ -17,6 +17,7 @@ from reach.airflow.tasks.extract_refs_operator import ExtractRefsOperator
 from reach.airflow.tasks.parse_pdf_operator import ParsePdfOperator
 from reach.airflow.tasks.evaluate_operator import EvaluateOperator
 from reach.airflow.tasks.fetch_json_gzip import FetchJsonGzip
+from reach.airflow.tasks.evaluate_extract_refs_from_gold_data import ExtractRefsFromGoldDataOperator
 
 ORGANISATIONS = [
     'who_iris',
@@ -191,15 +192,13 @@ def evaluate_matches(dag, organisation, fuzzyMatchRefs):
     # Match gold dataset against elastic search using existing task
     # Compare gold es matches with reach es matches
 
-    fetchedValidationData = FetchJsonGzip(
-        task_id='FetchValidationData',
-        src_s3_key=VALIDATION_DATA,
-        dag=dag,
-    )
 
-    fetchedGoldData = FetchJsonGzip(
-        task_id='FetchGoldData',
-        src_s3_key=GOLD_DATA,
+    extractedGoldRefs = ExtractRefsFromGoldDataOperator(
+        task_id='ExtractRefsFromGoldData',
+        valid_s3_key=VALIDATION_DATA,
+        gold_s3_key=GOLD_DATA,
+        dst_s3_key=to_s3_output(
+            dag, 'gold_refs.json.gz'),
         dag=dag,
     )
 
@@ -209,12 +208,12 @@ def evaluate_matches(dag, organisation, fuzzyMatchRefs):
         src_s3_key=fuzzyMatchRefs.dst_s3_key,
         organisation=organisation,
         dst_s3_key=to_s3_output(
-            dag, 'end-to-end-evaluation', organisation, '.json.gz'),
+            dag, 'evaluation', organisation, '.json.gz'),
         es_index='-'.join([dag.dag_id, 'epmc', 'metadata']),
         dag=dag,
     )
 
-    fetchedGoldData >> fetchedValidationData >> fuzzyMatchRefs >> evaluateRefs
+    fuzzyMatchRefs >> extractedGoldRefs >> evaluateRefs
     return evaluateRefs
 
 
